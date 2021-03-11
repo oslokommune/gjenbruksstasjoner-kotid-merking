@@ -1,6 +1,6 @@
 """
 The purpose of the file is to download image files from S3 so to a
-local folder so they can be used for labelling and training of
+local directory so they can be used for labelling and training of
 ML-models.
 
 Some possible improvements:
@@ -19,7 +19,7 @@ import boto3
 # HARDCODED PARAMETERS
 BUCKET = "ok-origo-dataplatform-prod"
 PREFIX = "raw/red/REN/station_id_41"
-TARGET_FOLDER = "./actual_images"
+TARGET_DIR = "./actual_images"
 
 
 def date_from_key(key: str) -> datetime:
@@ -62,25 +62,25 @@ def valid_by_datetime(key, date_from=None, date_to=None):
     return True
 
 
-def key_downloaded(key, target_folder):
+def key_downloaded(key, target_dir):
     """
     Given an S3-key, check if this file has already been downloaded to
-    the local target_folder.
+    the local target_dir.
     """
 
     filename = key.split(r"/")[-1]
-    my_file = Path(os.path.join(target_folder, filename))
+    my_file = Path(os.path.join(target_dir, filename))
 
     return my_file.is_file()
 
 
-def download_file(key, target_folder):
+def download_file(key, target_dir):
     """
-    Given an S3-key and a local target_folder, download the file there.
+    Given an S3-key and a local target_dir, download the file there.
     """
 
     filename = key.split(r"/")[-1]
-    dst = os.path.join(target_folder, filename)
+    dst = os.path.join(target_dir, filename)
 
     s3 = boto3.client("s3")
     s3.download_file(BUCKET, key, dst)
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     ]
 
     # Find all the images which have not yet be downloaded to the target folder
-    new_keys = [k for k in keys if not key_downloaded(k, TARGET_FOLDER)]
+    new_keys = [k for k in keys if not key_downloaded(k, TARGET_DIR)]
 
     # Filter on dates?
     # Specify date_from and date_to. If not given, both defaults to None.
@@ -111,11 +111,11 @@ if __name__ == "__main__":
 
     # Download
     print("Press Ctrl+C to abort.")
-    if not os.path.exists(TARGET_FOLDER):
-        print(f"Made folder {TARGET_FOLDER}")
-        os.makedirs(TARGET_FOLDER)
+    if not os.path.exists(TARGET_DIR):
+        print(f"Made folder {TARGET_DIR}")
+        os.makedirs(TARGET_DIR)
     for i, vk in enumerate(valid_keys):
-        download_file(vk, TARGET_FOLDER)
+        download_file(vk, TARGET_DIR)
         print(f"File {i + 1}/{len(valid_keys)} downloaded: {vk}")
 
     print("Done. Now get some coffee and have a blast labelling images!")
