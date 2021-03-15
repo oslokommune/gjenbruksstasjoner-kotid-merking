@@ -1,18 +1,39 @@
 import sys
 import os
-import cv2
-import pandas as pd
-import numpy as np
 import re
 import datetime
 
+import cv2
+import pandas as pd
+import numpy as np
+
 np.random.seed(1)
 
-PICTURES_FOLDER = r"./actual images"
+PICTURES_FOLDER = r"./actual_images"
 LABELS_FILENAME = "labels_data.csv"  # .csv to open for manual manipulation
 
 
+def print_help():
+    """
+    Print a help string.
+    """
+
+    HELP_STRING = """
+    H: Help (this table)
+    Mouse Left click: Set end of queue.
+    E: Empty (no cars).
+    F: Full (can't see end of line).
+    1: One lane.
+    2: Two lanes.
+    R: Relevant or not (toggle).
+    C: Clear all.
+    Space: Save labelling and move to next image.
+    """
+    print(HELP_STRING)
+
+
 def get_datetime(filename):
+    """"""
 
     try:
         dt_str = re.findall(r"(\d{8}T\d{6})", filename)[0]
@@ -20,7 +41,7 @@ def get_datetime(filename):
         print(filename)
         sys.exit(1)
 
-    dt = datetime.datetime.strptime(dt_str, '%Y%m%dT%H%M%S')
+    dt = datetime.datetime.strptime(dt_str, "%Y%m%dT%H%M%S")
 
     return dt
 
@@ -63,7 +84,9 @@ def assign_image_to_set(number_of_images, train=0.7, valid=0.15, test=0.15):
     np.random.seed(1)
 
     rnd = np.random.random(number_of_images)
-    assigned_set = np.where(rnd < train, "Train", np.where(rnd >= (1-test), "Test", "Valid"))
+    assigned_set = np.where(
+        rnd < train, "Train", np.where(rnd >= (1 - test), "Test", "Valid")
+    )
 
     return assigned_set
 
@@ -76,26 +99,31 @@ def update_label_data(pictures_folder, labels_data):
     # Read the old df1
     try:
         df1 = pd.read_csv(labels_data, index_col=0)
-        df1["timestamp"] = [get_datetime(nfn) for nfn in list(df1.index)]  # Format lost while saving to .csv
+        df1["timestamp"] = [
+            get_datetime(nfn) for nfn in list(df1.index)
+        ]  # Format lost while saving to .csv
     except FileNotFoundError:
 
-        df1 = pd.DataFrame(columns=["timestamp",
-                                    "open",
-                                    "set_type",
-                                    "relevant",
-                                    "queue_full",
-                                    "queue_empty",
-                                    "queue_end_pos",
-                                    "lanes",
-                                    "labelled"])
+        df1 = pd.DataFrame(
+            columns=[
+                "timestamp",
+                "open",
+                "set_type",
+                "relevant",
+                "queue_full",
+                "queue_empty",
+                "queue_end_pos",
+                "lanes",
+                "labelled",
+            ]
+        )
 
     # Which files have been downloaded, but not added to the list?
     new_file_names = list(set(file_names).difference(set(df1.index)))
 
     # Create df2 - to be appended
     timestamp = [get_datetime(nfn) for nfn in new_file_names]
-    df2 = pd.DataFrame({"timestamp": timestamp},
-                       index=new_file_names)
+    df2 = pd.DataFrame({"timestamp": timestamp}, index=new_file_names)
     df2["open"] = df2["timestamp"].map(within_opening_hours)
     df2["set_type"] = np.nan
     df2["relevant"] = np.nan
@@ -117,7 +145,6 @@ def update_label_data(pictures_folder, labels_data):
 
 
 class MouseCoordinates(object):
-
     def __init__(self):
 
         self.x = np.nan
@@ -137,22 +164,6 @@ class MouseCoordinates(object):
             self.clicked = True
 
 
-def print_help():
-
-    print("H: Help (this table)")
-    print("=" * 40)
-    print("Mouse Left click: Set end of queue.")
-    print("E: Empty (no cars)")
-    print("F: Full (can't see end of line.)")
-    print("1: One lane.")
-    print("2: Two lanes.")
-    print("3: Not relevant.")
-    print("R: Relevant or not (toggle).")
-    print("C: Clear all.")
-    print("Space: Save labelling and move to next image.")
-    #print("S: Save results.")
-
-
 def get_text_y():
 
     # Simple generator used during print status
@@ -170,10 +181,14 @@ def draw_queue_end(im, fn, df, text_spec):
     yg = text_spec["y_generator"]
 
     if df.loc[fn, "queue_full"] is True:
-        im = cv2.putText(im, "?", (1150, 150), cv2.FONT_HERSHEY_PLAIN, 5, (255, 255, 255), 3)
+        im = cv2.putText(
+            im, "?", (1150, 150), cv2.FONT_HERSHEY_PLAIN, 5, (255, 255, 255), 3
+        )
         queue_text = "Koens ende er ikke synlig"
     elif df.loc[fn, "queue_empty"] is True:
-        im = cv2.putText(im, "_", (10, 150), cv2.FONT_HERSHEY_PLAIN, 5, (255, 255, 255), 3)
+        im = cv2.putText(
+            im, "_", (10, 150), cv2.FONT_HERSHEY_PLAIN, 5, (255, 255, 255), 3
+        )
         queue_text = "Koen er tom."
     elif not np.isnan(df.loc[fn, "queue_end_pos"]):
         x = int(df.loc[fn, "queue_end_pos"])
@@ -182,12 +197,15 @@ def draw_queue_end(im, fn, df, text_spec):
     else:
         queue_text = ""
 
-    im = cv2.putText(im, "Slutt ko: {0}".format(queue_text),
-                     (text_spec["x_pos"], next(text_spec["y_generator"])),
-                     text_spec["font"],
-                     1,
-                     text_spec["color"],
-                     1)
+    im = cv2.putText(
+        im,
+        "Slutt ko: {0}".format(queue_text),
+        (text_spec["x_pos"], next(text_spec["y_generator"])),
+        text_spec["font"],
+        1,
+        text_spec["color"],
+        1,
+    )
 
     return im
 
@@ -208,7 +226,9 @@ def get_weekday(filename: str) -> str:
         raise ValueError(f"Wut?? {filename}")
 
     datestring = match_obj[0]
-    date = datetime.date(int(datestring[0:4]), int(datestring[4:6]), int(datestring[6:8]))
+    date = datetime.date(
+        int(datestring[0:4]), int(datestring[4:6]), int(datestring[6:8])
+    )
     if date.weekday() == 0:
         return "Monday"
     elif date.weekday() == 1:
@@ -253,10 +273,10 @@ def check_entry(df, filename):
     if df.loc[filename, "relevant"] is False:
         return True
 
-    if (df.loc[filename, "relevant"] is True):
+    if df.loc[filename, "relevant"] is True:
 
-        if (df.loc[filename, "queue_full"] is True): # and \
-            #(not np.isnan(df.loc[filename, "lanes"])):
+        if df.loc[filename, "queue_full"] is True:  # and \
+            # (not np.isnan(df.loc[filename, "lanes"])):
 
             return True
 
@@ -264,8 +284,8 @@ def check_entry(df, filename):
 
             return True
 
-        elif (not np.isnan(df.loc[filename, "queue_end_pos"])):  #  and \
-            #(not np.isnan(df.loc[filename, "lanes"])):
+        elif not np.isnan(df.loc[filename, "queue_end_pos"]):  #  and \
+            # (not np.isnan(df.loc[filename, "lanes"])):
 
             return True
 
@@ -283,7 +303,9 @@ def label_images(df, pictures_folder):
         cv2.setMouseCallback(WIN_NAME, mc.set_end_of_queue)
         pass
     except cv2.error:
-        print("Ubuntu 18.04 - USE: sudo apt install libcanberra-gtk-module libcanberra-gtk3-module")
+        print(
+            "Ubuntu 18.04 - USE: sudo apt install libcanberra-gtk-module libcanberra-gtk3-module"
+        )
         raise
 
     load_new = True
@@ -299,10 +321,12 @@ def label_images(df, pictures_folder):
         im = im_org.copy()
 
         # Size status rectange
-        text_spec = {"color": (0, 0, 0),
-                     "font": cv2.FONT_HERSHEY_PLAIN,
-                     "x_pos": 10,
-                     "y_generator": get_text_y()}
+        text_spec = {
+            "color": (0, 0, 0),
+            "font": cv2.FONT_HERSHEY_PLAIN,
+            "x_pos": 10,
+            "y_generator": get_text_y(),
+        }
         im = cv2.rectangle(im, (0, 20), (400, 100), (255, 255, 255), -1)
 
         # Handle mouse clicks
@@ -319,14 +343,29 @@ def label_images(df, pictures_folder):
             lanes_text = int(df.loc[fn, "lanes"])
         else:
             lanes_text = ""
-        im = cv2.putText(im, "Lanes: {0}".format(lanes_text), (text_spec["x_pos"], next(text_spec["y_generator"])), text_spec["font"], 1, text_spec["color"], 1)
+        im = cv2.putText(
+            im,
+            "Lanes: {0}".format(lanes_text),
+            (text_spec["x_pos"], next(text_spec["y_generator"])),
+            text_spec["font"],
+            1,
+            text_spec["color"],
+            1,
+        )
 
         if ~np.isnan(df.loc[fn, "relevant"]):
             relevant_text = df.loc[fn, "relevant"]
         else:
             relevant_text = ""
-        im = cv2.putText(im, "Relevant: {0}".format(relevant_text), (text_spec["x_pos"], next(text_spec["y_generator"])),
-                          text_spec["font"], 1, text_spec["color"], 1)
+        im = cv2.putText(
+            im,
+            "Relevant: {0}".format(relevant_text),
+            (text_spec["x_pos"], next(text_spec["y_generator"])),
+            text_spec["font"],
+            1,
+            text_spec["color"],
+            1,
+        )
 
         cv2.imshow(WIN_NAME, im)
         k = cv2.waitKey(1)
