@@ -1,16 +1,61 @@
-import sys
 import os
-import re
 import datetime
 
 import cv2
 import pandas as pd
 import numpy as np
 
+from common import datetime_from_string
+
 np.random.seed(1)
 
-PICTURES_FOLDER = r"./actual_images"
-LABELS_FILENAME = "labels_data.csv"  # .csv to open for manual manipulation
+# HARDCODED PARAMETERS
+PICTURES_DIR = "./actual_images"
+LABELS_FILENAME = "labels_data.csv"
+
+
+def update_label_data(pictures_dir: str, labels_data: str) -> pd.DataFrame:
+    """
+    Read the content of an (assumed) existing .csv-file of image
+    filenames and possible previous labeling data. Merge this with a
+    table of empty rows for the new images which have been downloaded.
+    """
+
+    COLUMN_NAMES = [
+        "timestamp",
+        "open",
+        "set_type",
+        "relevant",
+        "queue_full",
+        "queue_empty",
+        "queue_end_pos",
+        "lanes",
+        "labelled",
+    ]
+
+    try:
+        df1 = pd.read_csv(labels_data, index_col=0)
+        df1["timestamp"] = [datetime_from_string(nfn) for nfn in list(df1.index)]
+    except FileNotFoundError:
+        df1 = pd.DataFrame(columns=COLUMN_NAMES)
+
+    # Which files have been downloaded, but not added to the list?
+    file_names = os.listdir(pictures_dir)
+    image_files = [fn for fn in file_names if fn[-4:] == ".jpg"]
+    new_file_names = list(set(image_files).difference(set(df1.index)))
+
+    # Add rows for new files to df2
+    df2 = pd.DataFrame(columns=COLUMN_NAMES, index=new_file_names)
+    df2["timestamp"] = [datetime_from_string(nfn) for nfn in new_file_names]
+    df2["open"] = df2["timestamp"].map(within_opening_hours)
+    df2["labelled"] = False
+
+    # Merge and assign set type
+    df = pd.concat((df1, df2), axis=0)
+    df = df.sort_values(by="timestamp", ascending=True)
+    df["set_type"] = assign_image_to_set(df.shape[0])
+
+    return df
 
 
 def print_help():
@@ -32,57 +77,47 @@ def print_help():
     print(HELP_STRING)
 
 
-def get_datetime(filename):
-    """"""
-
-    try:
-        dt_str = re.findall(r"(\d{8}T\d{6})", filename)[0]
-    except IndexError:
-        print(filename)
-        sys.exit(1)
-
-    dt = datetime.datetime.strptime(dt_str, "%Y%m%dT%H%M%S")
-
-    return dt
-
-
-def within_opening_hours(dt):
-
-    """These functions are roughly correct. Consider tweaking if more exactlness is needed."""
+def within_opening_hours(dt: datetime.datetime):
+    """
+    Return True if dt is within the opening hours for Haraldrud. Note
+    that these functions are based on a rule of thumb which is
+    normally correct. This was considered GOOD ENOUGH enough, since the
+    purpose is to not spend time of images outside the opening hours.
+    """
 
     # Post-Covid-19 restart (approximately April 2020)
     if dt.year == 2020 and dt.month == 4:
-        if (dt.hour >= 10) and (dt.hour < 17) and (dt.weekday() in [0, 1, 2, 3, 4]):
-            return True
-        else:
-            return False
+        return (dt.hour >= 10) and (dt.hour < 17) and (dt.weekday() in [0, 1, 2, 3, 4])
 
-    # Otherwise (this is not exact, but good enough...)
+    # Later (does not handle holidays, but this is not crucial)
     if dt.weekday() in [0, 1, 2, 3]:
         # Mon - Thu
-        if (dt.hour >= 8) and (dt.hour <= 20):
-            return True
-        else:
-            return False
-
+        return (dt.hour >= 8) and (dt.hour <= 20)
     elif dt.weekday() in [4, 5]:
-        # Fri + Sat
-        if (dt.hour >= 9) and (dt.hour <= 15):
-            return True
-        else:
-            return False
-
+        # Fri - Sat
+        return (dt.hour >= 9) and (dt.hour <= 15)
     elif dt.weekday() in [6]:
         # Sun
         return False
 
 
-def assign_image_to_set(number_of_images, train=0.7, valid=0.15, test=0.15):
+def assign_image_to_set(
+    number_of_images: int, train=0.7, valid=0.15, test=0.15
+) -> np.array:
+    """
+    Based on the number_of_images, return an equal length array which
+    split in the sets Train, Valid or Train.
 
-    assert (train + valid + test) == 1.0
+    The intended purpose is to assign images to these sets. Since the
+    rows (outside this function) are sorted by date and the random
+    seed is set, the sets will be consistent when (only new) pictures
+    are added.
+    """
+
+    if (train + valid + test) != 1.0:
+        raise ValueError("The proportions of image sets does not add to 100%.")
 
     np.random.seed(1)
-
     rnd = np.random.random(number_of_images)
     assigned_set = np.where(
         rnd < train, "Train", np.where(rnd >= (1 - test), "Test", "Valid")
@@ -91,60 +126,12 @@ def assign_image_to_set(number_of_images, train=0.7, valid=0.15, test=0.15):
     return assigned_set
 
 
-def update_label_data(pictures_folder, labels_data):
+class MouseCoordinates:
+    """
+    Used to register mouse clicks, i.e. where the end of the queue is
+    located.
+    """
 
-    file_names = os.listdir(pictures_folder)
-    file_names = [fn for fn in file_names if fn[-4:] == ".jpg"]
-
-    # Read the old df1
-    try:
-        df1 = pd.read_csv(labels_data, index_col=0)
-        df1["timestamp"] = [
-            get_datetime(nfn) for nfn in list(df1.index)
-        ]  # Format lost while saving to .csv
-    except FileNotFoundError:
-
-        df1 = pd.DataFrame(
-            columns=[
-                "timestamp",
-                "open",
-                "set_type",
-                "relevant",
-                "queue_full",
-                "queue_empty",
-                "queue_end_pos",
-                "lanes",
-                "labelled",
-            ]
-        )
-
-    # Which files have been downloaded, but not added to the list?
-    new_file_names = list(set(file_names).difference(set(df1.index)))
-
-    # Create df2 - to be appended
-    timestamp = [get_datetime(nfn) for nfn in new_file_names]
-    df2 = pd.DataFrame({"timestamp": timestamp}, index=new_file_names)
-    df2["open"] = df2["timestamp"].map(within_opening_hours)
-    df2["set_type"] = np.nan
-    df2["relevant"] = np.nan
-    df2["queue_full"] = np.nan
-    df2["queue_empty"] = np.nan
-    df2["queue_end_pos"] = np.nan
-    df2["lanes"] = np.nan
-    df2["labelled"] = False
-
-    # Append
-    print(df1.head())
-    print(df2.head())
-    df = pd.concat((df1, df2), axis=0)
-    print(df.tail())
-    df = df.sort_values(by="timestamp", ascending=True)
-    df["set_type"] = assign_image_to_set(df.shape[0])
-
-    return df
-
-
-class MouseCoordinates(object):
     def __init__(self):
 
         self.x = np.nan
@@ -158,29 +145,29 @@ class MouseCoordinates(object):
             self.y = y
             self.clicked = True
 
-        if event == cv2.EVENT_RBUTTONDOWN:
-            self.x = np.nan
-            self.y = np.nan
-            self.clicked = True
-
 
 def get_text_y():
+    """
+    Simple generator used to give y coordinate when displaying status.
+    """
 
-    # Simple generator used during print status
     y = 40
     while True:
         yield y
         y += 20
 
 
-def draw_queue_end(im, fn, df, text_spec):
+def draw_queue_end(
+    im: np.ndarray, fn: str, df: pd.DataFrame, text_spec: dict
+) -> np.ndarray:
+    """
+    Given the filename and the information of the image stored in df,
+    draw relevant information on top of the image im and return it.
+    """
 
-    color = text_spec["color"]
-    font = text_spec["font"]
-    x = text_spec["x_pos"]
-    yg = text_spec["y_generator"]
-
-    if df.loc[fn, "queue_full"] is True:
+    if (
+        df.loc[fn, "queue_full"] is True
+    ):  # keep as-is. Dropping "is True" gives an undesired result.
         im = cv2.putText(
             im, "?", (1150, 150), cv2.FONT_HERSHEY_PLAIN, 5, (255, 255, 255), 3
         )
@@ -211,90 +198,59 @@ def draw_queue_end(im, fn, df, text_spec):
 
 
 def get_weekday(filename: str) -> str:
-
     """
     Returns the weekday given a filename.
-    Yes, the number of lines here can probably be cut by 75%.
     """
 
-    comp_exp = re.compile(r"_(\d{8})T")
-    match_obj = comp_exp.findall(filename)
-    if len(match_obj) == 0:
-        raise ValueError(f"No date found in {filename}.")
-    elif len(match_obj) > 1:
-        print(match_obj)
-        raise ValueError(f"Wut?? {filename}")
-
-    datestring = match_obj[0]
-    date = datetime.date(
-        int(datestring[0:4]), int(datestring[4:6]), int(datestring[6:8])
+    d = datetime_from_string(filename).date()
+    WEEKDAYS = (
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
     )
-    if date.weekday() == 0:
-        return "Monday"
-    elif date.weekday() == 1:
-        return "Tuesday"
-    elif date.weekday() == 2:
-        return "Wednesday"
-    elif date.weekday() == 3:
-        return "Thurday"
-    elif date.weekday() == 4:
-        return "Friday"
-    elif date.weekday() == 5:
-        return "Saturday"
-    elif date.weekday() == 6:
-        return "Sunday"
-    else:
-        raise Exception("Wut?")
+    return WEEKDAYS[d.weekday()]
 
 
-def get_next_file_name(fn, df):
-
-    # Every entry where relevant is True/False won't be included here.
+def get_next_file_name(df):
+    """
+    Get the next image to be labelled.
+    """
 
     df_tmp = df.loc[df.loc[:, "relevant"].isnull(), :].copy()
-
-    SPECIAL_CASE = False
-    if SPECIAL_CASE:
-        # Implemented at a quick workaround 2020-Nov-12 to train on images from Monday + Saturday.
-        # Can be generalized among other things for å more targeted training.
-        VALID_WEEKDAYS = ["Monday", "Saturday"]
-        df_tmp["Weekday"] = df_tmp.index.map(get_weekday)
-        df_tmp = df_tmp.loc[df_tmp["Weekday"].isin(VALID_WEEKDAYS), :].copy()
-
     return df_tmp.index[-1]
 
 
 def check_entry(df, filename):
+    """
+    Check if the labelling done to this image is sufficient
+    Lanes are not mandatory
+    """
 
-    # Check if the labelling done to this image is sufficient
-    # Lanes are not mandatory
-
-    # Pics with no relevant information don't need this information filled in
     if df.loc[filename, "relevant"] is False:
         return True
 
     if df.loc[filename, "relevant"] is True:
-
-        if df.loc[filename, "queue_full"] is True:  # and \
-            # (not np.isnan(df.loc[filename, "lanes"])):
-
+        if df.loc[filename, "queue_full"] is True:
             return True
-
         elif df.loc[filename, "queue_empty"] is True:
-
             return True
-
-        elif not np.isnan(df.loc[filename, "queue_end_pos"]):  #  and \
-            # (not np.isnan(df.loc[filename, "lanes"])):
-
+        elif not np.isnan(df.loc[filename, "queue_end_pos"]):
             return True
 
     return False
 
 
 def label_images(df, pictures_folder):
+    """
+    This main loop for reading new unlabeled images, labelling them
+    and writing the updated information to the .csv file.
+    """
 
-    fn = get_next_file_name(np.nan, df)
+    fn = get_next_file_name(df)
 
     mc = MouseCoordinates()
     WIN_NAME = "Label the image"
@@ -303,6 +259,7 @@ def label_images(df, pictures_folder):
         cv2.setMouseCallback(WIN_NAME, mc.set_end_of_queue)
         pass
     except cv2.error:
+        #
         print(
             "Ubuntu 18.04 - USE: sudo apt install libcanberra-gtk-module libcanberra-gtk3-module"
         )
@@ -312,15 +269,15 @@ def label_images(df, pictures_folder):
     while True:
 
         if load_new:
-            fn = get_next_file_name(fn, df)
-            print(fn)
+            fn = get_next_file_name(df)
+            print(f"Image file: {fn}")
             full_path = os.path.join(pictures_folder, fn)
             im_org = cv2.imread(full_path, cv2.IMREAD_COLOR)
             load_new = False
 
         im = im_org.copy()
 
-        # Size status rectange
+        # Define the size and style of the status legend
         text_spec = {
             "color": (0, 0, 0),
             "font": cv2.FONT_HERSHEY_PLAIN,
@@ -331,14 +288,15 @@ def label_images(df, pictures_folder):
 
         # Handle mouse clicks
         if mc.clicked:
-            df.loc[fn, "queue_end_pos"], _ = mc.x, mc.y  # x_queue_end, y_queue_end
+            df.loc[fn, "queue_end_pos"], _ = mc.x, mc.y
             df.loc[fn, "queue_full"] = False
             df.loc[fn, "queue_empty"] = False
             mc.clicked = False
 
-        # Draw queue end
+        # Draw end of queue end
         im = draw_queue_end(im, fn, df, text_spec)
 
+        # Draw number of lanes (to legend)
         if ~np.isnan(df.loc[fn, "lanes"]):
             lanes_text = int(df.loc[fn, "lanes"])
         else:
@@ -353,6 +311,7 @@ def label_images(df, pictures_folder):
             1,
         )
 
+        # Draw relevance (to legend)
         if ~np.isnan(df.loc[fn, "relevant"]):
             relevant_text = df.loc[fn, "relevant"]
         else:
@@ -371,17 +330,17 @@ def label_images(df, pictures_folder):
         k = cv2.waitKey(1)
 
         # Handle keys pressed
-        if k % 256 == 32:  # Space
+        if k % 256 == 32:  # Space - Save the labelling data
             if check_entry(df, fn):
-                print("Successfull entry.")
+                print("Successful entry.")
                 df.loc[fn, "labelled"] = True
-                print(df.dtypes)
                 df.to_csv(LABELS_FILENAME, index=True)
                 load_new = True
+                continue
             else:
                 print("Labelling not done, please review.")
 
-        if k % 256 == 27:  # Escape
+        if k % 256 == 27:  # Escape - Quit the program
             break
 
         if k % 256 == 99:  # c = clear all
@@ -409,7 +368,7 @@ def label_images(df, pictures_folder):
                 df.loc[fn, "lanes"] = 1
             elif k % 256 == 50:  # 2 = Two lanes
                 df.loc[fn, "lanes"] = 2
-            elif k % 256 == 51:  # 3 = Unclear or not relevant (e.g. if no cars)
+            elif k % 256 == 51:  # 3 = Not relevant (e.g. if no cars)
                 df.loc[fn, "lanes"] = np.nan
 
         if k % 256 == 114:  # r = Relevant (toggle)
@@ -419,33 +378,20 @@ def label_images(df, pictures_folder):
                 df.loc[fn, "relevant"] = True
             elif np.isnan(df.loc[fn, "relevant"]):
                 df.loc[fn, "relevant"] = True
-            else:
-                print("Value of relevant: {0}".format(df.loc[fn, "relevant"]))
-                print("dtype of relevant: {0}".format(df.loc[fn, "relevant"].dtype))
-                raise Exception("WUT?")
 
-        if k % 256 < 255:
-            print(k % 256)
+        # Can be de-commented during development.
+        # Which key number was pressed?
+        # if k % 256 < 255:
+        #     print(k % 256)
 
     cv2.destroyAllWindows()
 
     return df
 
 
-def test():
-
-    dt1 = datetime.datetime(2020, 4, 15, 12, 0, 0)
-
-    print(dt1.month)
-    print(dt1.year)
-
-
 if __name__ == "__main__":
 
-    # test(); import sys; sys.exit(1)
-
-    print(LABELS_FILENAME)
-    df = update_label_data(PICTURES_FOLDER, LABELS_FILENAME)
-    df = label_images(df, PICTURES_FOLDER)
+    df = update_label_data(PICTURES_DIR, LABELS_FILENAME)
+    df = label_images(df, PICTURES_DIR)
 
     print("That was fun!")
