@@ -73,6 +73,7 @@ def print_help():
     R: Relevant or not (toggle).
     C: Clear all.
     Space: Save labelling and move to next image.
+    Esc: Exit.
     """
     print(HELP_STRING)
 
@@ -249,6 +250,8 @@ def label_images(df, pictures_folder):
     This main loop for reading new unlabeled images, labelling them
     and writing the updated information to the .csv file.
     """
+
+    print_help()
 
     fn = get_next_file_name(df)
 
