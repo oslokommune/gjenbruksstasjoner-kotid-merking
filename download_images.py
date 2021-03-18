@@ -16,27 +16,12 @@ from pathlib import Path
 
 import boto3
 
+from common import datetime_from_string
+
 # HARDCODED PARAMETERS
 BUCKET = "ok-origo-dataplatform-prod"
 PREFIX = "raw/red/REN/station_id_41"
 TARGET_DIR = "./actual_images"
-
-
-def date_from_key(key: str) -> datetime:
-    """
-    Get an S3-key as a string, return a datetime object generated
-    from the key. Raise a ValueError if any other number than one
-    pattern is found.
-    """
-
-    matching_datetimes = re.findall(r"\d{8}T\d{6}", key)
-    nfindings = len(matching_datetimes)
-    if nfindings != 1:
-        raise ValueError(
-            f"1 expected, but found {nfindings} datetime strings within this key:\n{key}"
-        )
-
-    return datetime.strptime(matching_datetimes[0], "%Y%m%dT%H%M%S")
 
 
 def valid_by_datetime(key, date_from=None, date_to=None):
@@ -54,7 +39,7 @@ def valid_by_datetime(key, date_from=None, date_to=None):
             f"date_to is a {type(date_to)}, not the expected datetime or NoneType"
         )
 
-    key_dt = date_from_key(key)
+    key_dt = datetime_from_string(key)
 
     if (date_from and key_dt < date_from) or (date_to and key_dt > date_to):
         return False
