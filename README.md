@@ -9,7 +9,6 @@ Modify the HARDCODED PARAMETERS in `download_images.py`.
 Run `python3 download_images.py`.
 
 # Label the images
-
 Run `python3 label_images.py`.
+See the instructions which are immediately printed. Or press `h` for help.
 
-To be done.
