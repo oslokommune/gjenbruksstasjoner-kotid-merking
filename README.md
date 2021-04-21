@@ -16,5 +16,5 @@ Modify the HARDCODED PARAMETERS in `download_images.py` to reflect the bucket an
 Run `python3 download_images.py`.
 
 ## Label the images
-Run `python3 label_images.py`.
+Run `python3 label_images.py`.  
 See the instructions which ar immediately printed. Or press `h` for help.
