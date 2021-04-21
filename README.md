@@ -13,7 +13,7 @@ Install the required libraries:
 ## Download images to local destination folder
 You need to be logged in to the AWS-account (contact Origo for the account number) with access to the right S3 buckets to download the images. Use `saml2aws` or similar tools.  
 Modify the HARDCODED PARAMETERS in `download_images.py` to reflect the bucket and location of the file, as well as the target directory when downloading.  
-#Run `python3 download_images.py`.
+Run `python3 download_images.py`.
 
 ## Label the images
 Run `python3 label_images.py`.
